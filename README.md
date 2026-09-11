@@ -1,87 +1,106 @@
-# NestIdea
+# NestIdea — Solar Water Heater Cleaning
 
-A home-services marketplace starter (à la Urban Company), built for
-`nestidea.com`. City-based URL routing, service categories, service
-detail pages, and a working booking-flow UI. Next.js 14 (App Router)
-+ Tailwind CSS, no backend required to run it — all data is in
-`lib/`, ready to be swapped for a real database.
+A full booking site for a solar water heater cleaning business: a
+service page with real content, customer accounts, address-based
+booking, and an admin dashboard that works like a lightweight CRM
+(view every booking, update its status, edit the homepage copy).
 
-## Run it locally
+Next.js 14 (App Router) + Tailwind, NextAuth (credentials login),
+and Prisma for the database.
+
+## Stack
+
+- **Next.js 14** — App Router, server components, route handlers as
+  the API
+- **Prisma + SQLite** — local dev database, one schema file, zero
+  external service needed to get started
+- **NextAuth (credentials)** — email/password login for both
+  customers and the admin; JWT sessions carry a `role` field
+- **bcryptjs** — password hashing (pure JS, no native build step)
+- **Tailwind CSS** — same design tokens as your marketing site
+  (`brand` blue from the logo, `ink`/`mist`/`paper` neutrals)
+
+## Set up locally
 
 ```bash
 npm install
+cp .env.example .env        # then edit ADMIN_EMAIL / ADMIN_PASSWORD
+npx prisma migrate dev --name init
+npm run db:seed
 npm run dev
 ```
 
-Open `http://localhost:3000`. On localhost, geolocation isn't
-available, so you'll land on the manual city picker — click a city
-to continue.
+`npm install` runs `prisma generate` automatically (via
+`postinstall`). **This step needs internet access to download
+Prisma's query engine** — it will fail in a fully offline or
+firewalled environment, but works normally on your machine or on
+Vercel.
 
-## URL structure
+Open `http://localhost:3000`. Log in at `/login` with the
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` you set in `.env` to reach the
+admin dashboard, or sign up as a customer at `/signup` to try the
+booking flow.
+
+## What's where
 
 ```
-/                                    → hero + manual city picker
-/bangalore                           → city homepage (categories)
-/bangalore/cleaning                  → services within a category
-/bangalore/cleaning/full-home-cleaning        → service detail
-/bangalore/cleaning/full-home-cleaning/book   → booking flow
+/                     → service page (hero + description + plans), content from DB
+/signup, /login       → customer + admin auth (shared login form, role decides where it sends you)
+/book                 → booking form: plan, date, time, address, notes — requires login
+/account              → customer's own bookings + status
+/admin                → CRM dashboard — every booking, inline status updates
+/admin/content        → edit the homepage hero title/subtitle/description
 ```
 
-Same pattern as Urban Company's `/city` and `/city-service` URLs,
-just nested (`/city/category/service`) instead of hyphen-flattened —
-easier to maintain and still reads cleanly.
+- `prisma/schema.prisma` — the four models: `User` (with a
+  `CUSTOMER`/`ADMIN` role), `Plan`, `Booking`, and `SiteContent`
+  (a single editable row for homepage copy).
+- `prisma/seed.js` — creates the admin account, default homepage
+  copy, and three starter plans (panel clean, descaling, full
+  service). Edit the plans here, or add a `/admin/plans` page later
+  the same way `/admin/content` works.
+- `middleware.js` — blocks `/admin/*` unless the signed-in user has
+  `role: ADMIN`, and blocks `/book` and `/account` unless someone is
+  signed in at all.
+- `app/api/` — every write goes through a route handler that checks
+  the session server-side before touching the database (never trust
+  the client for the role check).
 
-## How the city redirect works
+## Deploying it for real
 
-`middleware.js` runs on Vercel's Edge Network. When someone hits the
-bare root (`nestidea.com`), it reads `req.geo.city` (populated
-automatically by Vercel — no third-party geolocation API or key
-needed) and redirects to `/that-city` if it's in your supported
-list. If there's no confident match, it falls through to the root
-page's manual picker instead of guessing.
+SQLite is great for local dev but **won't persist reliably on
+Vercel** (serverless functions get an ephemeral filesystem). For
+production:
 
-This **only works when deployed to Vercel** — `req.geo` isn't
-populated in local dev or on other hosts, which is why local dev
-always shows the picker.
+1. Get a hosted Postgres database — Neon, Supabase, and Vercel
+   Postgres all have workable free tiers.
+2. In `prisma/schema.prisma`, change the datasource provider from
+   `"sqlite"` to `"postgresql"`.
+3. Set `DATABASE_URL` in Vercel's project environment variables to
+   your hosted connection string.
+4. Set `NEXTAUTH_SECRET` (generate with `openssl rand -base64 32`)
+   and `NEXTAUTH_URL` (your live domain) in Vercel too.
+5. Push to GitHub, import into Vercel, deploy. Run
+   `npx prisma migrate deploy` against the production database once
+   (Vercel's build step can do this automatically if you add it to
+   the build command: `prisma generate && prisma migrate deploy && next build`).
+6. Run the seed script once against production (`npm run db:seed`
+   with production `DATABASE_URL` set locally) to create your real
+   admin account — then change that password immediately.
 
-## Where to edit things
+## Natural next steps
 
-- `lib/cities.js` — supported cities. Add a city here and it's
-  automatically live at `/that-slug` (routes are dynamic).
-- `lib/catalog.js` — categories and services, with pricing/duration/
-  rating. This is the part you'll want to move to a real database
-  (Postgres via Supabase/Neon is a good free-tier fit) once you're
-  past the prototype stage.
-- `components/BookingForm.js` — the 3-step booking UI (time → address
-  → confirm). Right now "Confirm booking" just flips local state to
-  a confirmation screen — wire it to a real API route
-  (`app/api/bookings/route.js`) and a database/notification service
-  when you're ready to take real bookings.
-- `tailwind.config.js` — color and font tokens (`ink`, `sand`, `clay`,
-  `moss`, plus the `display`/`body` font families).
-
-## Deploying to nestidea.com
-
-1. Push this project to a GitHub repo.
-2. Import it in Vercel (vercel.com/new) — it auto-detects Next.js,
-   no config needed.
-3. In the Vercel project's Domains settings, add `nestidea.com` and
-   `www.nestidea.com`, then point your domain's DNS to Vercel per
-   their on-screen instructions (an A record or CNAME, depending on
-   your registrar).
-4. Deploy. The `middleware.js` geo-redirect will start working
-   automatically once it's live on Vercel's edge network — nothing
-   extra to configure.
-
-## What's still a prototype
-
-- **No real backend** — services/pricing live in a JS file, bookings
-  aren't persisted anywhere.
-- **No auth** — no customer accounts or professional-side dashboard.
-- **No payments** — booking flow stops at "confirm," no payment
-  step wired in.
-- **No professional-matching logic** — a real version needs a way to
-  assign/notify a professional for each booking.
-
-These are the natural next milestones once the core browsing/booking
-flow feels right.
+- **Email notifications** — customer gets a confirmation email when
+  status changes to `Confirmed`/`Completed` (Resend or Postmark are
+  simple to wire into the `PATCH /api/admin/bookings` handler).
+- **Payments** — currently bookings are "pay the technician on
+  visit." Adding Razorpay/Stripe would mean collecting payment at
+  the end of `/book`.
+- **Editable plans from `/admin`** — right now plans are seeded;
+  a `/admin/plans` page following the same pattern as
+  `/admin/content` would let you add/edit/remove plans without
+  touching code.
+- **Multiple technicians / assignment** — right now a booking is
+  just "assigned to the business." A `Technician` model and an
+  assignment field on `Booking` would let the admin dashboard
+  dispatch jobs.

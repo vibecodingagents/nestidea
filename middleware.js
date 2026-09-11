@@ -1,29 +1,30 @@
 import { NextResponse } from "next/server";
-import { CITIES } from "./lib/cities";
+import { getToken } from "next-auth/jwt";
 
-// Runs on Vercel's Edge Network. `req.geo` is populated automatically
-// on Vercel — no third-party geolocation API needed.
-export function middleware(req) {
+export async function middleware(req) {
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   const { pathname } = req.nextUrl;
 
-  // Only step in on the bare root. Every other path already carries
-  // its own city slug, so leave it alone.
-  if (pathname !== "/") return NextResponse.next();
+  const isAdminRoute = pathname.startsWith("/admin");
+  const needsLogin = pathname.startsWith("/book") || pathname.startsWith("/account");
 
-  const geoCity = req.geo?.city?.toLowerCase().replace(/\s+/g, "-");
-  const match = CITIES.find((c) => c.slug === geoCity);
-
-  if (match) {
+  if (isAdminRoute) {
+    if (!token || token.role !== "ADMIN") {
+      const url = req.nextUrl.clone();
+      url.pathname = "/login";
+      url.searchParams.set("callbackUrl", pathname);
+      return NextResponse.redirect(url);
+    }
+  } else if (needsLogin && !token) {
     const url = req.nextUrl.clone();
-    url.pathname = `/${match.slug}`;
+    url.pathname = "/login";
+    url.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(url);
   }
 
-  // No confident match (local dev, unsupported city, geo blocked) —
-  // fall through to the root page, which renders a manual city picker.
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: "/",
+  matcher: ["/admin/:path*", "/book/:path*", "/account/:path*"],
 };

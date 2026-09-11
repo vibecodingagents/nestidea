@@ -14,6 +14,8 @@ module.exports = {
         "brand-dark": "#1D84B5",
         moss: "#3F8F5F",
         "moss-dark": "#2E6E45",
+        amber: "#C8862E",
+        rust: "#B23B3B",
       },
       fontFamily: {
         display: ["var(--font-fraunces)", "serif"],
